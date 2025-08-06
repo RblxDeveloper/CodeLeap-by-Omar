@@ -10,7 +10,8 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { ChallengeDisplay } from '@/components/challenge-display'
 import { ChallengeHistory } from '@/components/challenge-history'
 import { LoadingGhost } from '@/components/loading-ghost'
-import { Code2, Target, History, Sparkles, Brain, AlertCircle, Clock } from 'lucide-react'
+import { ApiKeyModal } from '@/components/api-key-modal'
+import { Code2, Target, History, Sparkles, Brain, AlertCircle, Clock, Key, CreditCard, ExternalLink } from 'lucide-react'
 
 export interface Challenge {
   id: string
@@ -36,6 +37,9 @@ export default function CodeLeapApp() {
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [isUsingFallback, setIsUsingFallback] = useState(false)
   const [generationTime, setGenerationTime] = useState<number | null>(null)
+  const [apiKey, setApiKey] = useState<string | null>(null)
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false)
+  const [isRateLimited, setIsRateLimited] = useState(false)
 
   useEffect(() => {
     // Load challenge history from localStorage
@@ -43,7 +47,28 @@ export default function CodeLeapApp() {
     if (savedHistory) {
       setChallengeHistory(JSON.parse(savedHistory))
     }
+
+    // Check for saved API key or set default
+    const savedApiKey = localStorage.getItem('codeleap-api-key')
+    if (savedApiKey) {
+      setApiKey(savedApiKey)
+    } else {
+      // Set the default Groq API key
+      const defaultKey = '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'
+      setApiKey(defaultKey)
+      localStorage.setItem('codeleap-api-key', defaultKey)
+    }
   }, [])
+
+  const handleApiKeySet = (newApiKey: string) => {
+    setApiKey(newApiKey)
+    setShowApiKeyModal(false)
+    setIsRateLimited(false) // Reset rate limit status when new key is set
+  }
+
+  const changeApiKey = () => {
+    setShowApiKeyModal(true)
+  }
 
   const saveToHistory = (challenge: Challenge) => {
     const updatedHistory = [challenge, ...challengeHistory].slice(0, 50) // Keep last 50 challenges
@@ -52,11 +77,17 @@ export default function CodeLeapApp() {
   }
 
   const generateChallenge = async () => {
+    if (!apiKey) {
+      setShowApiKeyModal(true)
+      return
+    }
+
     const startTime = Date.now()
     setIsGenerating(true)
     setGenerationError(null)
     setIsUsingFallback(false)
     setGenerationTime(null)
+    setIsRateLimited(false)
     
     try {
       const controller = new AbortController()
@@ -72,6 +103,7 @@ export default function CodeLeapApp() {
         body: JSON.stringify({
           difficulty: selectedDifficulty,
           language: selectedLanguage,
+          apiKey: apiKey
         }),
         signal: controller.signal
       })
@@ -82,7 +114,12 @@ export default function CodeLeapApp() {
 
       const challenge = await response.json()
       
-      if (challenge.id && challenge.id.includes('fallback')) {
+      // Check for rate limit error
+      if (challenge.isRateLimit) {
+        setIsRateLimited(true)
+        setGenerationError('Rate limit exceeded for free tier')
+        setIsUsingFallback(true)
+      } else if (challenge.fallbackUsed) {
         setIsUsingFallback(true)
         setGenerationError('AI was slow/unavailable, using curated challenge')
       }
@@ -133,6 +170,12 @@ export default function CodeLeapApp() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* API Key Modal */}
+      <ApiKeyModal 
+        isOpen={showApiKeyModal} 
+        onApiKeySet={handleApiKeySet}
+      />
+
       {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -143,7 +186,20 @@ export default function CodeLeapApp() {
               <p className="text-sm text-muted-foreground">AI Coding Challenges</p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center space-x-2">
+            {apiKey && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={changeApiKey}
+                className="text-xs"
+              >
+                <Key className="h-3 w-3 mr-1" />
+                Change API Key
+              </Button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -199,8 +255,48 @@ export default function CodeLeapApp() {
             {/* Loading Ghost */}
             {isGenerating && <LoadingGhost />}
 
+            {/* Rate Limit Warning */}
+            {isRateLimited && (
+              <Card className="border-2 border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800">
+                <CardContent className="pt-6">
+                  <div className="flex items-center space-x-2 text-orange-600 dark:text-orange-400 mb-3">
+                    <CreditCard className="h-5 w-5" />
+                    <span className="font-medium">Groq API Rate Limit Reached</span>
+                    {generationTime && (
+                      <Badge variant="outline" className="ml-2">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {(generationTime / 1000).toFixed(1)}s
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm text-orange-700 dark:text-orange-300 space-y-2">
+                    <p>Your Groq API has reached its rate limit. To continue generating AI challenges:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-4">
+                      <li>Wait for the rate limit to reset</li>
+                      <li>Upgrade to Groq Pro for higher limits</li>
+                      <li>Get faster response times</li>
+                    </ul>
+                    <div className="flex items-center space-x-4 mt-3">
+                      <a 
+                        href="https://console.groq.com/settings/billing" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center space-x-1 text-orange-600 dark:text-orange-400 hover:underline font-medium"
+                      >
+                        <CreditCard className="h-4 w-4" />
+                        <span>Upgrade Plan</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <span className="text-orange-600 dark:text-orange-400">•</span>
+                      <span className="text-sm">Using curated challenge instead</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Generation Status */}
-            {(generationError || isUsingFallback) && (
+            {(generationError || isUsingFallback) && !isRateLimited && (
               <Card className={`border-2 ${isUsingFallback ? 'border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-800' : 'border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800'}`}>
                 <CardContent className="pt-6">
                   <div className={`flex items-center space-x-2 ${isUsingFallback ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -298,13 +394,18 @@ export default function CodeLeapApp() {
                   </div>
                   <Button 
                     onClick={generateChallenge} 
-                    disabled={isGenerating}
+                    disabled={isGenerating || !apiKey}
                     className="w-full cursor-pointer hover:bg-primary/90 transition-colors"
                     size="lg"
                   >
                     <Brain className="h-4 w-4 mr-2" />
                     {isGenerating ? 'AI is thinking...' : `Generate Challenge`}
                   </Button>
+                  {!apiKey && (
+                    <p className="text-sm text-muted-foreground text-center">
+                      Please set your API key to generate challenges
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
