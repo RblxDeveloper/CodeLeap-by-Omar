@@ -4,6 +4,9 @@ export async function POST(request: NextRequest) {
   try {
     const { difficulty, language } = await request.json()
 
+    // Use the provided API key
+    const apiKey = "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"
+
     // 70% chance of incorrect code for more challenge
     const shouldBeCorrect = Math.random() > 0.7
 
@@ -107,7 +110,6 @@ Make each challenge completely different with unique variable names, scenarios, 
     }
 
     const prompt = createPrompt(language, difficulty, shouldBeCorrect, randomTopic, randomScenario)
-    const apiKey = "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"
 
     console.log(`🚀 Generating ${difficulty} ${language} challenge about ${randomTopic} (should be ${shouldBeCorrect ? 'correct' : 'incorrect'})...`)
 
@@ -118,6 +120,7 @@ Make each challenge completely different with unique variable names, scenarios, 
     }, 25000)
 
     try {
+      // Use the exact format you provided
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -146,7 +149,17 @@ Make each challenge completely different with unique variable names, scenarios, 
       if (!response.ok) {
         const errorText = await response.text()
         console.error('❌ DeepSeek Chat v3 API error:', response.status, errorText)
-        throw new Error(`DeepSeek Chat v3 API error: ${response.status}`)
+        
+        // Parse error details if available
+        let errorDetails = errorText
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorDetails = errorJson.error?.message || errorText
+        } catch (e) {
+          // Keep original error text if not JSON
+        }
+        
+        throw new Error(`DeepSeek Chat v3 API error (${response.status}): ${errorDetails}`)
       }
 
       const aiResponse = await response.json()
