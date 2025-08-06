@@ -4,8 +4,8 @@ export async function POST(request: NextRequest) {
   try {
     const { difficulty, language } = await request.json()
 
-    // Use the provided API key
-    const apiKey = "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"
+    // Use the new API key
+    const apiKey = "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"
 
     // 70% chance of incorrect code for more challenge
     const shouldBeCorrect = Math.random() > 0.7
@@ -115,17 +115,22 @@ Make each challenge completely different with unique variable names, scenarios, 
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => {
-      console.log('⏰ DeepSeek request timed out after 25 seconds')
+      console.log('⏰ AI request timed out after 25 seconds')
       controller.abort()
     }, 25000)
 
     try {
+      // Get the site URL from headers or use default
+      const siteUrl = request.headers.get('host') 
+        ? `https://${request.headers.get('host')}`
+        : "https://codeleap.vercel.app"
+
       // Use the exact format you provided
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://codeleap.vercel.app",
+          "HTTP-Referer": siteUrl,
           "X-Title": "CodeLeap - AI Coding Challenges",
           "Content-Type": "application/json"
         },
@@ -136,10 +141,7 @@ Make each challenge completely different with unique variable names, scenarios, 
               "role": "user",
               "content": prompt
             }
-          ],
-          "temperature": 0.8,
-          "max_tokens": 500,
-          "top_p": 0.9
+          ]
         }),
         signal: controller.signal
       })
@@ -148,7 +150,7 @@ Make each challenge completely different with unique variable names, scenarios, 
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('❌ DeepSeek Chat v3 API error:', response.status, errorText)
+        console.error('❌ OpenRouter API error:', response.status, errorText)
         
         // Parse error details if available
         let errorDetails = errorText
@@ -159,14 +161,14 @@ Make each challenge completely different with unique variable names, scenarios, 
           // Keep original error text if not JSON
         }
         
-        throw new Error(`DeepSeek Chat v3 API error (${response.status}): ${errorDetails}`)
+        throw new Error(`OpenRouter API error (${response.status}): ${errorDetails}`)
       }
 
       const aiResponse = await response.json()
       const content = aiResponse.choices?.[0]?.message?.content
       
       if (!content) {
-        throw new Error('No content received from DeepSeek')
+        throw new Error('No content received from AI')
       }
 
       let challenge = null
@@ -232,13 +234,13 @@ Make each challenge completely different with unique variable names, scenarios, 
         isCorrect: typeof challenge.isCorrect === 'boolean' ? challenge.isCorrect : shouldBeCorrect,
         explanation: challenge.explanation || `This code is ${shouldBeCorrect ? 'correct' : 'incorrect'}.`,
         additionalInfo: challenge.additionalInfo || `This is a ${difficulty} ${language} example about ${randomTopic}.`,
-        id: `deepseek-v3-${language}-${difficulty}-${randomTopic}-${Date.now()}`,
+        id: `ai-${language}-${difficulty}-${randomTopic}-${Date.now()}`,
         language,
         difficulty,
         timestamp: Date.now()
       }
 
-      console.log('🎉 Unique challenge created:', finalChallenge)
+      console.log('🎉 AI challenge created successfully')
       return NextResponse.json(finalChallenge)
 
     } catch (fetchError) {
@@ -247,7 +249,7 @@ Make each challenge completely different with unique variable names, scenarios, 
     }
 
   } catch (error) {
-    console.error('💥 Using varied fallback:', error)
+    console.error('💥 AI generation failed, using fallback:', error)
     
     // More varied fallback examples with proper HTML
     const variedFallbacks = {
